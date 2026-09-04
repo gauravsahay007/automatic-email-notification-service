@@ -1,0 +1,43 @@
+name: Drishti IAS UP PCS Monthly Consolidation
+
+on:
+  schedule:
+    # Run at 03:30 UTC (09:00 IST) on the 5th of every month
+    - cron: '30 3 5 * *'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write # Needed to commit state.json back
+
+jobs:
+  check-and-send:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Run Drishti IAS UP PCS Service
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          RESEND_TO_EMAIL: ${{ secrets.RESEND_TO_EMAIL }}
+        run: |
+          python -m services.drishti_up_pcs.service
+          
+      - name: Commit state.json if changed
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update state.json for Drishti IAS UP PCS email service"
+          file_pattern: "data/state.json"
