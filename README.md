@@ -13,7 +13,7 @@ Runs automatically via GitHub Actions on the **5th of every month at 9:00 AM IST
 The service maintains a local `data/state.json` file to track the last sent month. This state file is committed back to the repository via the GitHub Actions runner to ensure duplicate emails are not sent even if the workflow is triggered manually.
 
 ### Behavior when Current Month is Unavailable
-If the workflow runs but the Drishti IAS page has not yet published the PDF for the current month, the service will log this as an expected condition and exit successfully without sending an email. It will not fall back to a previous month's PDF.
+If the workflow runs but the Drishti IAS page has not yet published the PDF for the current month, the service automatically falls back to finding and sending the **last updated (latest available) PDF** on the page. If that latest PDF has already been sent previously, it skips sending a duplicate email and exits cleanly.
 
 ### Required Environment Variables
 The following environment variables (or GitHub Secrets) are required:

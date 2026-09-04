@@ -5,6 +5,7 @@ import logging
 import argparse
 import base64
 from datetime import datetime
+import re
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -44,23 +45,20 @@ def find_monthly_pdf(html: str, year: int, month_name: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     
     # 1. Find the year section
-    # Based on observation, years might be IDs on <div>, <h2>, etc.
     year_tag = soup.find(id=str(year))
     if not year_tag:
-        logger.error(f"Current year missing: Could not find section for {year}")
-        sys.exit(1)
+        logger.warning(f"Could not find year section for {year}.")
+        return None
         
     logger.info(f"Found section for year {year}.")
     
     # 2. Find the UL/list following the year section
     ul_tag = year_tag.find_next("ul")
     if not ul_tag:
-        logger.error(f"Current year missing/malformed: Could not find list under {year}")
-        sys.exit(1)
+        logger.warning(f"Could not find list under year section {year}.")
+        return None
 
     # 3. Find the month entry inside the UL
-    # Typical entry looks like: "State PCS CA Consolidation (Uttar Pradesh) September 2026"
-    # We will do a case-insensitive search for the month name inside the text of the link
     pdf_url = None
     month_name_lower = month_name.lower()
     
@@ -70,12 +68,63 @@ def find_monthly_pdf(html: str, year: int, month_name: str) -> str:
             text = a_tag.text.strip().lower()
             if month_name_lower in text:
                 pdf_url = a_tag.get("href")
-                # Sometimes URLs are relative, handle that:
                 if pdf_url and pdf_url.startswith("/"):
                     pdf_url = "https://www.drishtiias.com" + pdf_url
                 break
                 
     return pdf_url
+
+def extract_month_year_from_text(text: str) -> str:
+    """Extract Month and Year from link text string if present."""
+    months = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ]
+    found_month = None
+    for m in months:
+        if m.lower() in text.lower():
+            found_month = m
+            break
+            
+    year_match = re.search(r"\b(20\d\d)\b", text)
+    if found_month and year_match:
+        return f"{found_month} {year_match.group(1)}"
+    elif found_month:
+        return found_month
+    elif year_match:
+        return year_match.group(1)
+    return None
+
+def find_latest_pdf(html: str) -> tuple[str, str]:
+    """
+    Parse HTML to find the latest available PDF on the page across all year sections.
+    Returns (pdf_url, month_year_str) or (None, None).
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    
+    year_tags = []
+    for tag in soup.find_all(id=True):
+        tid = tag.get("id", "").strip()
+        if tid.isdigit() and len(tid) == 4:
+            year_tags.append((int(tid), tag))
+            
+    # Sort years descending (newest first)
+    year_tags.sort(key=lambda x: x[0], reverse=True)
+    
+    for y_num, tag in year_tags:
+        ul_tag = tag.find_next("ul")
+        if ul_tag:
+            for li in ul_tag.find_all("li"):
+                a_tag = li.find("a")
+                if a_tag and a_tag.get("href"):
+                    pdf_url = a_tag.get("href")
+                    if pdf_url.startswith("/"):
+                        pdf_url = "https://www.drishtiias.com" + pdf_url
+                    text = a_tag.text.strip()
+                    month_year_str = extract_month_year_from_text(text) or f"Latest {y_num}"
+                    return pdf_url, month_year_str
+                    
+    return None, None
 
 def download_pdf(pdf_url: str) -> bytes:
     """Download the PDF and validate it, with retry support."""
@@ -269,10 +318,6 @@ def main():
     month_year_str = f"{month_name} {year}"
     
     logger.info(f"Target: {month_year_str}")
-    
-    if check_already_sent(month_year_str):
-        logger.info(f"Already sent the email for {month_year_str}. Do not send duplicate email.")
-        sys.exit(0)
         
     try:
         html = fetch_page()
@@ -282,17 +327,25 @@ def main():
         
     pdf_url = find_monthly_pdf(html, year, month_name)
     
-    if not pdf_url:
-        logger.info(f"Result: PDF not yet published (Current month PDF not available yet: {month_year_str})")
-        # Exit successfully because this is an expected condition
+    if pdf_url:
+        logger.info(f"Target PDF found for {month_year_str}: {pdf_url}")
+    else:
+        logger.info(f"Current month PDF not available yet ({month_year_str}). Looking for latest available PDF...")
+        pdf_url, fallback_month_year = find_latest_pdf(html)
+        if not pdf_url:
+            logger.error("No PDF available on page.")
+            sys.exit(1)
+        month_year_str = fallback_month_year
+        logger.info(f"Fallback selected latest available PDF: {month_year_str} ({pdf_url})")
+
+    if check_already_sent(month_year_str):
+        logger.info(f"Already sent the email for {month_year_str}. Do not send duplicate email.")
         sys.exit(0)
         
-    logger.info(f"PDF found. URL: {pdf_url}")
-    
     # Try to extract a reasonable filename from URL, fallback to default
     pdf_filename = pdf_url.split("/")[-1]
     if not pdf_filename.endswith(".pdf"):
-        pdf_filename = f"UP_State_PCS_Consolidation_{month_name}_{year}.pdf"
+        pdf_filename = f"UP_State_PCS_Consolidation_{month_year_str.replace(' ', '_')}.pdf"
     
     try:
         pdf_bytes = download_pdf(pdf_url)

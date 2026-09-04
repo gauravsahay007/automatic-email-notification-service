@@ -4,6 +4,8 @@ from unittest.mock import patch, MagicMock
 from services.drishti_up_pcs.service import (
     fetch_page,
     find_monthly_pdf,
+    find_latest_pdf,
+    extract_month_year_from_text,
     download_pdf,
     check_already_sent,
     mark_as_sent,
@@ -62,12 +64,18 @@ def test_find_monthly_pdf_missing_month():
     url = find_monthly_pdf(MOCK_HTML_MISSING_MONTH, 2026, "September")
     assert url is None
 
-@patch("services.drishti_up_pcs.service.sys.exit")
-def test_find_monthly_pdf_missing_year(mock_exit):
-    mock_exit.side_effect = SystemExit
-    with pytest.raises(SystemExit):
-        find_monthly_pdf(MOCK_HTML_SUCCESS, 2030, "September")
-    mock_exit.assert_called_once_with(1)
+def test_find_monthly_pdf_missing_year():
+    url = find_monthly_pdf(MOCK_HTML_SUCCESS, 2030, "September")
+    assert url is None
+
+def test_find_latest_pdf():
+    url, month_year = find_latest_pdf(MOCK_HTML_SUCCESS)
+    assert url == "https://www.drishtiias.com/images/pdf/september-2026.pdf"
+    assert month_year == "September 2026"
+
+def test_extract_month_year_from_text():
+    assert extract_month_year_from_text("State PCS CA Consolidation (Uttar Pradesh) July 2026") == "July 2026"
+    assert extract_month_year_from_text("State PCS CA Consolidation (Uttar Pradesh) – December 2021") == "December 2021"
 
 @patch("services.drishti_up_pcs.service.requests.get")
 def test_fetch_page(mock_get):
