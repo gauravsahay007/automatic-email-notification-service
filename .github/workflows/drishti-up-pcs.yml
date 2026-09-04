@@ -4,7 +4,23 @@ on:
   schedule:
     # Run at 03:30 UTC (09:00 IST) on the 5th of every month
     - cron: '30 3 5 * *'
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target Month/Year (e.g., July-2026 or July 2026). Leave empty for current/latest.'
+        required: false
+        type: string
+        default: ''
+      force:
+        description: 'Force send email even if already sent previously'
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Dry run mode (do not send actual email)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write # Needed to commit state.json back
@@ -33,8 +49,19 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
           RESEND_TO_EMAIL: ${{ secrets.RESEND_TO_EMAIL }}
+          PYTHONUNBUFFERED: "1"
         run: |
-          python -m services.drishti_up_pcs.service
+          ARGS=""
+          if [ -n "${{ inputs.target }}" ]; then
+            ARGS="$ARGS --target \"${{ inputs.target }}\""
+          fi
+          if [ "${{ inputs.force }}" = "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python -m services.drishti_up_pcs.service $ARGS
           
       - name: Commit state.json if changed
         uses: stefanzweifel/git-auto-commit-action@v5

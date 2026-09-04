@@ -23,7 +23,20 @@ logger = logging.getLogger(__name__)
 # Constants
 URL = "https://www.drishtiias.com/free-downloads/state-pcs-monthly-consolidation/uttar-pradesh"
 STATE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "state.json")
-MAX_ATTACHMENT_SIZE_MB = 20  # Resend attachment limit is typically high (40MB), let's set a conservative 20MB limit
+MAX_ATTACHMENT_SIZE_MB = 20  # Resend attachment limit
+
+def write_github_summary(title: str, items: list[str]):
+    """Write markdown summary to GITHUB_STEP_SUMMARY if running in GitHub Actions."""
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        try:
+            with open(summary_path, "a") as f:
+                f.write(f"## {title}\n")
+                for item in items:
+                    f.write(f"- {item}\n")
+                f.write("\n")
+        except Exception as e:
+            logger.warning(f"Failed to write GITHUB_STEP_SUMMARY: {e}")
 
 def fetch_page() -> str:
     """Fetch the HTML content of the Drishti IAS page."""
@@ -268,6 +281,7 @@ def send_email(pdf_bytes: bytes, month_year_str: str, pdf_filename: str, dry_run
 def main():
     parser = argparse.ArgumentParser(description="Drishti IAS UP State PCS Consolidation Service")
     parser.add_argument("--dry-run", action="store_true", help="Perform a dry run without sending email")
+    parser.add_argument("--force", action="store_true", help="Force sending email even if already marked as sent")
     parser.add_argument("--month", type=str, help="Target month name (e.g., July or 07)")
     parser.add_argument("--year", type=int, help="Target year (e.g., 2026)")
     parser.add_argument("--target", type=str, help="Target month-year string (e.g. 'July 2026' or 'July-2026')")
@@ -338,8 +352,13 @@ def main():
         month_year_str = fallback_month_year
         logger.info(f"Fallback selected latest available PDF: {month_year_str} ({pdf_url})")
 
-    if check_already_sent(month_year_str):
-        logger.info(f"Already sent the email for {month_year_str}. Do not send duplicate email.")
+    if check_already_sent(month_year_str) and not args.force:
+        logger.info(f"Already sent the email for {month_year_str}. Do not send duplicate email. (Use --force to override)")
+        write_github_summary("⏭️ Email Skipped (Already Sent)", [
+            f"**Target Issue**: {month_year_str}",
+            f"**Reason**: Already marked as sent in `data/state.json`.",
+            f"**Action**: Pass `force: true` in manual trigger options to resend."
+        ])
         sys.exit(0)
         
     # Try to extract a reasonable filename from URL, fallback to default
@@ -351,6 +370,11 @@ def main():
         pdf_bytes = download_pdf(pdf_url)
     except Exception as e:
         logger.error(f"Download failed: {e}")
+        write_github_summary("❌ Download Failed", [
+            f"**Target Issue**: {month_year_str}",
+            f"**URL**: {pdf_url}",
+            f"**Error**: {e}"
+        ])
         sys.exit(1)
         
     # Send email
@@ -358,6 +382,17 @@ def main():
     
     if not args.dry_run:
         mark_as_sent(month_year_str)
+        write_github_summary("📧 Email Sent Successfully", [
+            f"**Target Issue**: {month_year_str}",
+            f"**Attachment**: `{pdf_filename}` ({len(pdf_bytes) / (1024*1024):.2f} MB)",
+            f"**Source**: [Drishti IAS Page]({URL})"
+        ])
+    else:
+        write_github_summary("🧪 Dry Run Executed", [
+            f"**Target Issue**: {month_year_str}",
+            f"**Attachment**: `{pdf_filename}` ({len(pdf_bytes) / (1024*1024):.2f} MB)",
+            f"**Note**: Dry run mode - no email was actually sent."
+        ])
 
 if __name__ == "__main__":
     main()
