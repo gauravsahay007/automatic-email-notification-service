@@ -1,0 +1,9 @@
+Provide a comprehensive, well-structured Monthly Current Affairs Digest for {month_year}.
+Cover the following sections:
+1. National & International News Highlights
+2. Economy & Business Developments
+3. Science, Technology & Environment
+4. Government Schemes & Policies
+5. Important Dates & Awards
+
+Format the response clearly using section titles, subheadings, and bullet points.

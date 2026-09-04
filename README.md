@@ -1,60 +1,72 @@
 # automatic-email-notification-service
 
-A service to automatically fetch and email the Drishti IAS UP State PCS Monthly Consolidation PDFs, and can be extended for other automated notifications.
+Automated email notification service suite featuring:
+1. **Drishti IAS UP State PCS Monthly Consolidation**: Scrapes and sends monthly PDF consolidations.
+2. **Gemini Monthly Current Affairs Service**: Generates monthly current affairs digests powered by Google Gemini AI, converts output into styled PDF documents, and emails them.
 
-## Drishti IAS UP State PCS Consolidation
+---
+
+## Services Overview
+
+### 1. Drishti IAS UP State PCS Consolidation
 
 Automatically scrapes the [Drishti IAS Uttar Pradesh State PCS](https://www.drishtiias.com/free-downloads/state-pcs-monthly-consolidation/uttar-pradesh) page once a month, downloads the current month's PDF, and sends it as an email attachment using [Resend](https://resend.com).
 
-### Monthly Schedule
-Runs automatically via GitHub Actions on the **5th of every month at 9:00 AM IST** (`0 3 * * *` UTC).
+#### Schedule & Idempotency
+- **Schedule**: GitHub Actions on the **5th of every month at 9:00 AM IST** (`30 3 5 * *` UTC).
+- **State File**: `data/state.json` tracks last sent issue.
 
-### Duplicate Email Behavior
-The service maintains a local `data/state.json` file to track the last sent month. This state file is committed back to the repository via the GitHub Actions runner to ensure duplicate emails are not sent even if the workflow is triggered manually.
-
-### Behavior when Current Month is Unavailable
-If the workflow runs but the Drishti IAS page has not yet published the PDF for the current month, the service automatically falls back to finding and sending the **last updated (latest available) PDF** on the page. If that latest PDF has already been sent previously, it skips sending a duplicate email and exits cleanly.
-
-### Required Environment Variables
-The following environment variables (or GitHub Secrets) are required:
-- `RESEND_API_KEY`: Your Resend API key (e.g., `re_123456789`)
-- `RESEND_FROM_EMAIL`: The sender email address (e.g., `notifications@example.com`)
-- `RESEND_TO_EMAIL`: The recipient email address (e.g., `recipient@example.com`)
-
-### Local Setup
-1. Clone the repository and navigate into it.
-2. Create a virtual environment: `python -m venv venv`
-3. Activate the virtual environment: `source venv/bin/activate`
-4. Install dependencies: `pip install -r requirements.txt`
-5. Copy the `.env.example` file to `.env`: `cp .env.example .env`
-6. Fill in the `.env` file with your actual values. **Important: Never commit the `.env` file!**
-
-### How to Run Manually
-Run for the current month:
+#### Manual Execution
 ```bash
-python -m services.drishti_up_pcs.service
-```
-
-Run for a specific month and year:
-```bash
-python -m services.drishti_up_pcs.service --target July-2026
-# or
-python -m services.drishti_up_pcs.service --month July --year 2026
-```
-
-### How to Perform a Dry Run
-A dry run will scrape the page, download and validate the PDF, and print the email content without actually sending the email.
-```bash
-# Dry run for current month
 python -m services.drishti_up_pcs.service --dry-run
-
-# Dry run for a specific month
-python -m services.drishti_up_pcs.service --target July-2026 --dry-run
+python -m services.drishti_up_pcs.service --target July-2026
 ```
 
-### GitHub Actions
-The workflow is defined in `.github/workflows/drishti-up-pcs.yml`.
-It requires the following GitHub Repository Secrets to be set up:
-- `RESEND_API_KEY`
-- `RESEND_FROM_EMAIL`
-- `RESEND_TO_EMAIL`
+---
+
+### 2. Gemini Monthly Current Affairs Service
+
+Uses Google Gemini AI to generate monthly current affairs digests (or custom prompted content), parses the response into a formatted PDF document via ReportLab, and mails it using Resend.
+
+#### Configuration & Secrets
+- `GEMINI_API_KEY`: API Key for Google Gemini.
+- `GEMINI_PROMPT_MONTHLY_CURRENT_AFFAIR_PROMPT`: (Optional) Custom prompt stored in env/secrets. Supports `{month_year}`, `{month}`, `{year}` placeholders.
+- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_TO_EMAIL`: Resend credentials.
+
+#### Schedule & Idempotency
+- **Schedule**: GitHub Actions on the **1st of every month at 9:30 AM IST** (`0 4 1 * *` UTC).
+- **State File**: `data/state_gemini.json` tracks idempotency.
+
+#### Manual Execution
+```bash
+# Dry run with default prompt
+python -m services.gemini_current_affairs.service --dry-run
+
+# Run with custom prompt override
+python -m services.gemini_current_affairs.service --prompt "Summarize global science & tech news for {month_year}" --dry-run
+
+# Specify target month & save local PDF
+python -m services.gemini_current_affairs.service --target "September 2026" --output-pdf output.pdf --dry-run
+```
+
+---
+
+## Local Setup & Testing
+
+1. Setup environment and install dependencies:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   pip install -r requirements-test.txt
+   ```
+
+2. Copy `.env.example` to `.env` and fill in secrets:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Run test suite:
+   ```bash
+   pytest
+   ```
